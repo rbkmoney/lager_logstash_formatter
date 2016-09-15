@@ -2,7 +2,6 @@
     {description, "Logstash formatter for lager"},
     {vsn, "1"},
     {registered, []},
-    {mod, {lager_logstash_formatter, []}},
     {applications, [
         kernel,
         stdlib,
