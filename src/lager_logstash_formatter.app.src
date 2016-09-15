@@ -1,0 +1,19 @@
+{application, lager_logstash_formatter , [
+    {description, "Logstash formatter for lager"},
+    {vsn, "1"},
+    {registered, []},
+    {mod, {lager_logstash_formatter, []}},
+    {applications, [
+        kernel,
+        stdlib,
+        jsx,
+        rfc3339
+    ]},
+    {env, []},
+    {modules, []},
+    {maintainers, [
+        "Anton Belyaev <a.belyaev@rbkmoney.com>"
+    ]},
+    {licenses, []},
+    {links, []}
+]}.
