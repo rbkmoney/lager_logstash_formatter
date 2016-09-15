@@ -16,12 +16,8 @@ format(Msg, Config, _Colors) ->
     format(Msg, Config).
 
 -spec format(lager_msg:lager_msg(), list()) -> any().
-format(Msg, Config) ->
-    Json = jsx:encode(get_msg_map(Msg)),
-    case proplists:get_value(ct_backend, Config) of
-        undefined -> Json;
-        _True     -> [Json]
-    end.
+format(Msg, _Config) ->
+    [jsx:encode(get_msg_map(Msg)), <<"\n">>].
 
 get_msg_map(Msg) ->
     #{
@@ -94,35 +90,25 @@ format_test_() ->
     {Self, Pid} = pid(),
     [
         {"basic message", ?_assertEqual(
-            <<"{\"@metadata\":{},\"@severity\":\"info\",\"@timestamp\":\"", TimeStamp/binary,
-                "\",\"message\":\"hallo world\"}"
-            >>,
+            [<<"{\"@metadata\":{},\"@severity\":\"info\",\"@timestamp\":\"",
+                TimeStamp/binary, "\",\"message\":\"hallo world\"}">>, <<"\n">>],
             format(lager_msg:new("hallo world", Now, info, [], []), [])
         )},
         {"pid in metadata", ?_assertEqual(
-            <<"{\"@metadata\":{\"pid\":\"", Pid/binary,
+            [<<"{\"@metadata\":{\"pid\":\"", Pid/binary,
                 "\"},\"@severity\":\"info\",\"@timestamp\":\"", TimeStamp/binary,
-                "\",\"message\":\"hallo world\"}"
-            >>,
+                "\",\"message\":\"hallo world\"}">>, <<"\n">>],
             format(lager_msg:new("hallo world", Now, info, [{pid, io_lib:format("~p", [Self])}], []), [])
         )},
         {"bare pid in metadata", ?_assertEqual(
-            <<"{\"@metadata\":{\"pid\":\"<0.6.0>\"},\"@severity\":\"info\",\"@timestamp\":\"", TimeStamp/binary,
-                "\",\"message\":\"hallo world\"}"
-            >>,
+            [<<"{\"@metadata\":{\"pid\":\"<0.6.0>\"},\"@severity\":\"info\",\"@timestamp\":\"",
+                TimeStamp/binary, "\",\"message\":\"hallo world\"}">>, <<"\n">>],
             format(lager_msg:new("hallo world", Now, info, [{pid, list_to_pid("<0.6.0>")}], []), [])
         )},
         {"file in metadata", ?_assertEqual(
-            <<"{\"@metadata\":{\"file\":\"foo.erl\"},\"@severity\":\"info\",\"@timestamp\":\"", TimeStamp/binary,
-                "\",\"message\":\"hallo world\"}"
-            >>,
+            [<<"{\"@metadata\":{\"file\":\"foo.erl\"},\"@severity\":\"info\",\"@timestamp\":\"",
+                TimeStamp/binary, "\",\"message\":\"hallo world\"}">>, <<"\n">>],
             format(lager_msg:new("hallo world", Now, info, [{file, "foo.erl"}], []), [])
-        )},
-        {"ct backend", ?_assertEqual(
-            [<<"{\"@metadata\":{},\"@severity\":\"info\",\"@timestamp\":\"", TimeStamp/binary,
-                "\",\"message\":\"hallo world\"}"
-            >>],
-            format(lager_msg:new("hallo world", Now, info, [], []), [{ct_backend, true}])
         )}
     ].
 
