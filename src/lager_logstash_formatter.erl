@@ -18,9 +18,9 @@ format(Msg, Config, _Colors) ->
 -spec format(lager_msg:lager_msg(), list()) -> any().
 format(Msg, Config) ->
     Json = jsx:encode(get_msg_map(Msg)),
-    case proplists:get_value(output_as_list, Config) of
+    case proplists:get_value(ct_backend, Config) of
         undefined -> Json;
-        _True     -> binary_to_list(Json)
+        _True     -> [Json]
     end.
 
 get_msg_map(Msg) ->
@@ -118,10 +118,11 @@ format_test_() ->
             >>,
             format(lager_msg:new("hallo world", Now, info, [{file, "foo.erl"}], []), [])
         )},
-        {"output as list", ?_assertEqual(
-            "{\"@metadata\":{},\"@severity\":\"info\",\"@timestamp\":\"" ++ binary_to_list(TimeStamp) ++
-                "\",\"message\":\"hallo world\"}",
-            format(lager_msg:new("hallo world", Now, info, [], []), [{output_as_list, true}])
+        {"ct backend", ?_assertEqual(
+            [<<"{\"@metadata\":{},\"@severity\":\"info\",\"@timestamp\":\"", TimeStamp/binary,
+                "\",\"message\":\"hallo world\"}"
+            >>],
+            format(lager_msg:new("hallo world", Now, info, [], []), [{ct_backend, true}])
         )}
     ].
 
