@@ -20,30 +20,40 @@ format(Msg, _Config) ->
     [jsx:encode(get_msg_map(Msg)), <<"\n">>].
 
 get_msg_map(Msg) ->
-    #{
-        '@timestamp' => get_timestamp(Msg),
-        '@severity'  => get_severity (Msg),
-        'message'    => get_message  (Msg),
-        '@metadata'  => get_metadata (Msg)
-    }.
+    maps:merge(
+        get_metadata(Msg),
+        #{
+            '@timestamp' => get_timestamp(Msg),
+            '@severity'  => get_severity (Msg),
+            'message'    => get_message  (Msg)
+         }
+   ).
 
+-spec get_timestamp(lager_msg:lager_msg()) -> binary().
 get_timestamp(Msg) ->
     {MegaSec, Sec, MicroSec} = lager_msg:timestamp(Msg),
     USec = MegaSec * 1000000000000 + Sec * 1000000 + MicroSec,
     {ok, TimeStamp} = rfc3339:format(USec, micro_seconds),
     TimeStamp.
 
+-spec get_severity(lager_msg:lager_msg()) -> atom().
 get_severity(Msg) ->
     lager_msg:severity(Msg).
 
+-spec get_message(lager_msg:lager_msg()) -> binary().
 get_message(Msg) ->
     unicode:characters_to_binary(lager_msg:message(Msg), unicode).
 
+-spec get_metadata(lager_msg:lager_msg()) -> map().
 get_metadata(Msg) ->
     case lager_msg:metadata(Msg) of
-        []   -> [{}];
-        Else -> lists:map(fun printable/1, Else)
+        []   -> #{};
+        Else -> lists:foldl(fun add_meta/2, #{}, Else)
     end.
+
+add_meta(MetaItem, Map) ->
+    {Key, Value} = printable(MetaItem),
+    Map#{Key => Value}.
 
 %% can't naively encode `File` or `Pid` as json as jsx see them as lists
 %% of integers
@@ -90,24 +100,23 @@ format_test_() ->
     {Self, Pid} = pid(),
     [
         {"basic message", ?_assertEqual(
-            [<<"{\"@metadata\":{},\"@severity\":\"info\",\"@timestamp\":\"",
-                TimeStamp/binary, "\",\"message\":\"hallo world\"}">>, <<"\n">>],
+            [<<"{\"@severity\":\"info\",\"@timestamp\":\"",
+               TimeStamp/binary, "\",\"message\":\"hallo world\"}">>, <<"\n">>],
             format(lager_msg:new("hallo world", Now, info, [], []), [])
         )},
         {"pid in metadata", ?_assertEqual(
-            [<<"{\"@metadata\":{\"pid\":\"", Pid/binary,
-                "\"},\"@severity\":\"info\",\"@timestamp\":\"", TimeStamp/binary,
-                "\",\"message\":\"hallo world\"}">>, <<"\n">>],
+            [<<"{\"@severity\":\"info\",\"@timestamp\":\"", TimeStamp/binary,
+               "\",\"message\":\"hallo world\",\"pid\":\"", Pid/binary, "\"}">>, <<"\n">>],
             format(lager_msg:new("hallo world", Now, info, [{pid, io_lib:format("~p", [Self])}], []), [])
         )},
         {"bare pid in metadata", ?_assertEqual(
-            [<<"{\"@metadata\":{\"pid\":\"<0.6.0>\"},\"@severity\":\"info\",\"@timestamp\":\"",
-                TimeStamp/binary, "\",\"message\":\"hallo world\"}">>, <<"\n">>],
+            [<<"{\"@severity\":\"info\",\"@timestamp\":\"", TimeStamp/binary,
+               "\",\"message\":\"hallo world\",\"pid\":\"<0.6.0>\"}">>, <<"\n">>],
             format(lager_msg:new("hallo world", Now, info, [{pid, list_to_pid("<0.6.0>")}], []), [])
         )},
         {"file in metadata", ?_assertEqual(
-            [<<"{\"@metadata\":{\"file\":\"foo.erl\"},\"@severity\":\"info\",\"@timestamp\":\"",
-                TimeStamp/binary, "\",\"message\":\"hallo world\"}">>, <<"\n">>],
+            [<<"{\"@severity\":\"info\",\"@timestamp\":\"", TimeStamp/binary,
+               "\",\"file\":\"foo.erl\",\"message\":\"hallo world\"}">>, <<"\n">>],
             format(lager_msg:new("hallo world", Now, info, [{file, "foo.erl"}], []), [])
         )}
     ].
