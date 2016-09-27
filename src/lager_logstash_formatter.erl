@@ -16,8 +16,10 @@ format(Msg, Config, _Colors) ->
     format(Msg, Config).
 
 -spec format(lager_msg:lager_msg(), list()) -> any().
-format(Msg, _Config) ->
-    [jsx:encode(get_msg_map(Msg)), <<"\n">>].
+format(Msg, Config) ->
+    Filters = proplists:get_value(filters, Config, []),
+    FilteredMsg = filter(get_msg_map(Msg), Filters),
+    [jsx:encode(FilteredMsg), <<"\n">>].
 
 get_msg_map(Msg) ->
     maps:merge(
@@ -77,6 +79,22 @@ pid_list(Pid) ->
             unicode:characters_to_binary(hd(io_lib:format("~p", [Pid])), unicode)
     end.
 
+%%filters
+filter(#{'message' := Message} = Msg, Filters) ->
+    Msg#{'message' => lists:foldl(fun apply_filter/2, Message, Filters)}.
+
+apply_filter(Filter, Message) ->
+    unicode:characters_to_binary(re:replace(Message, compiled_filter(Filter), "[***]"), unicode).
+
+compiled_filter(Filter) ->
+    case application:get_env(?MODULE, compiled_filters, #{}) of
+        #{Filter := CompiledFilter} ->
+            CompiledFilter;
+        #{} = Filters ->
+            {ok, CompiledFilter} = re:compile(Filter, [unicode]),
+            application:set_env(?MODULE, compiled_filters, Filters#{Filter => CompiledFilter}),
+            CompiledFilter
+    end.
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -118,6 +136,11 @@ format_test_() ->
             [<<"{\"@severity\":\"info\",\"@timestamp\":\"", TimeStamp/binary,
                "\",\"file\":\"foo.erl\",\"message\":\"hallo world\"}">>, <<"\n">>],
             format(lager_msg:new("hallo world", Now, info, [{file, "foo.erl"}], []), [])
+        )},
+        {"filtered message", ?_assertEqual(
+            [<<"{\"@severity\":\"info\",\"@timestamp\":\"",
+               TimeStamp/binary, "\",\"message\":\"one [***] three [***]\"}">>, <<"\n">>],
+            format(lager_msg:new("one two three four", Now, info, [], []), [{filters, ["two", "four"]}])
         )}
     ].
 
