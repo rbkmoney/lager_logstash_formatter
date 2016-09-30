@@ -142,7 +142,7 @@ format_test_() ->
         {"filtered message", ?_assertEqual(
             [<<"{\"@severity\":\"info\",\"@timestamp\":\"",
                TimeStamp/binary, "\",\"message\":\"one [***] three [***]\"}">>, <<"\n">>],
-            format(lager_msg:new("one two three four", Now, info, [], []), [{filters, ["two", "four"]}])
+            format(lager_msg:new("one two three four", Now, info, [], []), [{message_redaction_regex_list, ["two", "four"]}])
         )}
     ].
 
