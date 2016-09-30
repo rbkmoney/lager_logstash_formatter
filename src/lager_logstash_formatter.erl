@@ -17,7 +17,7 @@ format(Msg, Config, _Colors) ->
 
 -spec format(lager_msg:lager_msg(), list()) -> any().
 format(Msg, Config) ->
-    Filters = proplists:get_value(filters, Config, []),
+    Filters = proplists:get_value(message_redaction_regex_list, Config, []),
     FilteredMsg = filter(get_msg_map(Msg), Filters),
     [jsx:encode(FilteredMsg), <<"\n">>].
 
@@ -44,7 +44,7 @@ get_severity(Msg) ->
 
 -spec get_message(lager_msg:lager_msg()) -> binary().
 get_message(Msg) ->
-    unicode:characters_to_binary(lager_msg:message(Msg), unicode).
+    lager_msg:message(Msg).
 
 -spec get_metadata(lager_msg:lager_msg()) -> map().
 get_metadata(Msg) ->
@@ -81,10 +81,12 @@ pid_list(Pid) ->
 
 %%filters
 filter(#{'message' := Message} = Msg, Filters) ->
-    Msg#{'message' => lists:foldl(fun apply_filter/2, Message, Filters)}.
+    Msg#{'message' => filter(Message, Filters)};
+filter(Message, Filters) ->
+    unicode:characters_to_binary(lists:foldl(fun apply_filter/2, Message, Filters), unicode).
 
 apply_filter(Filter, Message) ->
-    unicode:characters_to_binary(re:replace(Message, compiled_filter(Filter), "[***]"), unicode).
+    re:replace(Message, compiled_filter(Filter), "[***]").
 
 compiled_filter(Filter) ->
     case application:get_env(?MODULE, compiled_filters, #{}) of
