@@ -16,8 +16,10 @@ format(Msg, Config, _Colors) ->
     format(Msg, Config).
 
 -spec format(lager_msg:lager_msg(), list()) -> any().
-format(Msg, _Config) ->
-    [jsx:encode(get_msg_map(Msg)), <<"\n">>].
+format(Msg, Config) ->
+    Filters = proplists:get_value(message_redaction_regex_list, Config, []),
+    FilteredMsg = filter(get_msg_map(Msg), Filters),
+    [jsx:encode(FilteredMsg), <<"\n">>].
 
 get_msg_map(Msg) ->
     maps:merge(
@@ -42,7 +44,7 @@ get_severity(Msg) ->
 
 -spec get_message(lager_msg:lager_msg()) -> binary().
 get_message(Msg) ->
-    unicode:characters_to_binary(lager_msg:message(Msg), unicode).
+    lager_msg:message(Msg).
 
 -spec get_metadata(lager_msg:lager_msg()) -> map().
 get_metadata(Msg) ->
@@ -77,6 +79,24 @@ pid_list(Pid) ->
             unicode:characters_to_binary(hd(io_lib:format("~p", [Pid])), unicode)
     end.
 
+%%filters
+filter(#{'message' := Message} = Msg, Filters) ->
+    Msg#{'message' => filter(Message, Filters)};
+filter(Message, Filters) ->
+    unicode:characters_to_binary(lists:foldl(fun apply_filter/2, Message, Filters), unicode).
+
+apply_filter(Filter, Message) ->
+    re:replace(Message, compiled_filter(Filter), "[***]").
+
+compiled_filter(Filter) ->
+    case application:get_env(?MODULE, message_redaction_compiled_regexes, #{}) of
+        #{Filter := CompiledFilter} ->
+            CompiledFilter;
+        #{} = Filters ->
+            {ok, CompiledFilter} = re:compile(Filter, [unicode]),
+            application:set_env(?MODULE, message_redaction_compiled_regexes, Filters#{Filter => CompiledFilter}),
+            CompiledFilter
+    end.
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -118,6 +138,14 @@ format_test_() ->
             [<<"{\"@severity\":\"info\",\"@timestamp\":\"", TimeStamp/binary,
                "\",\"file\":\"foo.erl\",\"message\":\"hallo world\"}">>, <<"\n">>],
             format(lager_msg:new("hallo world", Now, info, [{file, "foo.erl"}], []), [])
+        )},
+        {"filtered message", ?_assertEqual(
+            [<<"{\"@severity\":\"info\",\"@timestamp\":\"",
+               TimeStamp/binary, "\",\"message\":\"one [***] three [***]\"}">>, <<"\n">>],
+            format(
+                lager_msg:new("one two three four", Now, info, [], []),
+                [{message_redaction_regex_list, ["two", "four"]}]
+            )
         )}
     ].
 
