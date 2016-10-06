@@ -89,12 +89,12 @@ apply_filter(Filter, Message) ->
     re:replace(Message, compiled_filter(Filter), "[***]").
 
 compiled_filter(Filter) ->
-    case application:get_env(?MODULE, compiled_filters, #{}) of
+    case application:get_env(?MODULE, message_redaction_compiled_regexes, #{}) of
         #{Filter := CompiledFilter} ->
             CompiledFilter;
         #{} = Filters ->
             {ok, CompiledFilter} = re:compile(Filter, [unicode]),
-            application:set_env(?MODULE, compiled_filters, Filters#{Filter => CompiledFilter}),
+            application:set_env(?MODULE, message_redaction_compiled_regexes, Filters#{Filter => CompiledFilter}),
             CompiledFilter
     end.
 
