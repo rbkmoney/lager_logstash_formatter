@@ -86,7 +86,7 @@ filter(Message, Filters) ->
     unicode:characters_to_binary(lists:foldl(fun apply_filter/2, Message, Filters), unicode).
 
 apply_filter(Filter, Message) ->
-    re:replace(Message, compiled_filter(Filter), "[***]").
+    re:replace(Message, compiled_filter(Filter), "[***]", [global]).
 
 compiled_filter(Filter) ->
     case application:get_env(?MODULE, message_redaction_compiled_regexes, #{}) of
@@ -144,6 +144,14 @@ format_test_() ->
                TimeStamp/binary, "\",\"message\":\"one [***] three [***]\"}">>, <<"\n">>],
             format(
                 lager_msg:new("one two three four", Now, info, [], []),
+                [{message_redaction_regex_list, ["two", "four"]}]
+            )
+        )},
+        {"filtered message", ?_assertEqual(
+            [<<"{\"@severity\":\"info\",\"@timestamp\":\"",
+               TimeStamp/binary, "\",\"message\":\"[***] [***] [***] [***]\"}">>, <<"\n">>],
+            format(
+                lager_msg:new("two two four two", Now, info, [], []),
                 [{message_redaction_regex_list, ["two", "four"]}]
             )
         )}
