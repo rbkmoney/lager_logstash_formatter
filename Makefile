@@ -6,7 +6,7 @@ SERVICE_NAME = dev
 UTILS_PATH := build_utils
 TEMPLATES_PATH = .
 
-BUILD_IMAGE_TAG := b40627de232e7f04c9abd2c480856dac7bcd9386
+BUILD_IMAGE_TAG := 7f6c3f231c0cffbf11e67f5a5e38366bef1c798f
 
 CALL_ANYWHERE := all submodules rebar-update compile lint xref test clean distclean
 
@@ -41,7 +41,7 @@ clean:
 
 distclean:
 	$(REBAR) clean -a
-	rm -rfv _build _builds _cache _steps _temp
+	rm -rfv _build
 
 lint:
 	elvis rock
