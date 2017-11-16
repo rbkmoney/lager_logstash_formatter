@@ -17,9 +17,9 @@ format(Msg, Config, _Colors) ->
 
 -spec format(lager_msg:lager_msg(), list()) -> any().
 format(Msg, Config) ->
-    Filters = proplists:get_value(message_redaction_regex_list, Config, []),
-    FilteredMsg = filter(get_msg_map(Msg), Filters),
-    [jsx:encode(FilteredMsg), <<"\n">>].
+    Regexes = proplists:get_value(message_redaction_regex_list, Config, []),
+    RedactedMsg = redact(get_msg_map(Msg), Regexes),
+    [jsx:encode(RedactedMsg), <<"\n">>].
 
 get_msg_map(Msg) ->
     maps:merge(
@@ -80,22 +80,38 @@ pid_list(Pid) ->
     end.
 
 %%filters
-filter(#{'message' := Message} = Msg, Filters) ->
-    Msg#{'message' => filter(Message, Filters)};
-filter(Message, Filters) ->
-    unicode:characters_to_binary(lists:foldl(fun apply_filter/2, Message, Filters), unicode).
+redact(#{'message' := Message} = Msg, Regexes) ->
+    Msg#{'message' => redact_all(unicode:characters_to_binary(Message, unicode), Regexes)}.
 
-apply_filter(Filter, Message) ->
-    re:replace(Message, compiled_filter(Filter), "[***]", [global]).
+redact_all(Message, Regexes) ->
+    lists:foldl(fun redact_one/2, Message, Regexes).
 
-compiled_filter(Filter) ->
+redact_one(Regex, Message) ->
+    case re:run(Message, compile_regex(Regex), [global, {capture, first, index}]) of
+        {match, Captures} ->
+            lists:foldl(fun redact_capture/2, Message, Captures);
+        nomatch ->
+            Message
+    end.
+
+redact_capture({S, Len}, Message) ->
+    <<Pre:S/binary, _:Len/binary, Rest/binary>> = Message,
+    <<Pre/binary, (binary:copy(<<"*">>, Len))/binary, Rest/binary>>;
+redact_capture([Capture], Message) ->
+    redact_capture(Capture, Message).
+
+compile_regex(Regex) ->
     case application:get_env(?MODULE, message_redaction_compiled_regexes, #{}) of
-        #{Filter := CompiledFilter} ->
-            CompiledFilter;
-        #{} = Filters ->
-            {ok, CompiledFilter} = re:compile(Filter, [unicode]),
-            application:set_env(?MODULE, message_redaction_compiled_regexes, Filters#{Filter => CompiledFilter}),
-            CompiledFilter
+        #{Regex := CompiledRegex} ->
+            CompiledRegex;
+        #{} = CompiledRegexes ->
+            {ok, CompiledRegex} = re:compile(Regex, [unicode]),
+            ok = application:set_env(
+                ?MODULE,
+                message_redaction_compiled_regexes,
+                CompiledRegexes#{Regex => CompiledRegex}
+            ),
+            CompiledRegex
     end.
 
 -ifdef(TEST).
@@ -141,15 +157,15 @@ format_test_() ->
         )},
         {"filtered message", ?_assertEqual(
             [<<"{\"@severity\":\"info\",\"@timestamp\":\"",
-               TimeStamp/binary, "\",\"message\":\"one [***] three [***]\"}">>, <<"\n">>],
+               TimeStamp/binary, "\",\"message\":\"one *** three four ******\"}">>, <<"\n">>],
             format(
-                lager_msg:new("one two three four", Now, info, [], []),
-                [{message_redaction_regex_list, ["two", "four"]}]
+                lager_msg:new("one two three four murder", Now, info, [], []),
+                [{message_redaction_regex_list, ["two", "[d-u]{6}"]}]
             )
         )},
         {"filtered message", ?_assertEqual(
             [<<"{\"@severity\":\"info\",\"@timestamp\":\"",
-               TimeStamp/binary, "\",\"message\":\"[***] [***] [***] [***]\"}">>, <<"\n">>],
+               TimeStamp/binary, "\",\"message\":\"*** *** **** ***\"}">>, <<"\n">>],
             format(
                 lager_msg:new("two two four two", Now, info, [], []),
                 [{message_redaction_regex_list, ["two", "four"]}]
