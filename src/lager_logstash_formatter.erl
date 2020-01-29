@@ -44,7 +44,7 @@ get_severity(Msg) ->
 get_message(Msg) ->
     list_to_binary(lager_msg:message(Msg)).
 
--spec get_metadata(lager_msg:lager_msg()) -> map().
+-spec get_metadata(lager_msg:lager_msg()) -> list().
 get_metadata(Msg) ->
     case lager_msg:metadata(Msg) of
         []   -> [];
