@@ -16,46 +16,44 @@ format(Msg, Config, _Colors) ->
     format(Msg, Config).
 
 -spec format(lager_msg:lager_msg(), list()) -> any().
-format(Msg, Config) ->
-    Regexes = proplists:get_value(message_redaction_regex_list, Config, []),
-    RedactedMsg = redact(get_msg_map(Msg), Regexes),
-    [jsx:encode(RedactedMsg), <<"\n">>].
+format(Msg, _Config) ->
+    [jsx:encode(get_msg_meta(Msg)), <<"\n">>].
 
-get_msg_map(Msg) ->
-    maps:merge(
+get_msg_meta(Msg) ->
+    lists:merge(
         get_metadata(Msg),
-        #{
-            '@timestamp' => get_timestamp(Msg),
-            '@severity'  => get_severity (Msg),
-            'message'    => get_message  (Msg)
-         }
+        [
+            {'@severity', get_severity(Msg)},
+            {'@timestamp', get_timestamp(Msg)},
+            {'message', get_message(Msg)}
+         ]
    ).
 
 -spec get_timestamp(lager_msg:lager_msg()) -> binary().
 get_timestamp(Msg) ->
     {MegaSec, Sec, MicroSec} = lager_msg:timestamp(Msg),
     USec = MegaSec * 1000000000000 + Sec * 1000000 + MicroSec,
-    {ok, TimeStamp} = rfc3339:format(USec, micro_seconds),
+    {ok, TimeStamp} = time_format(USec, micro_seconds),
     TimeStamp.
 
 -spec get_severity(lager_msg:lager_msg()) -> atom().
 get_severity(Msg) ->
     lager_msg:severity(Msg).
 
--spec get_message(lager_msg:lager_msg()) -> binary().
+-spec get_message(lager_msg:lager_msg()) -> list().
 get_message(Msg) ->
-    lager_msg:message(Msg).
+    list_to_binary(lager_msg:message(Msg)).
 
 -spec get_metadata(lager_msg:lager_msg()) -> map().
 get_metadata(Msg) ->
     case lager_msg:metadata(Msg) of
-        []   -> #{};
-        Else -> lists:foldl(fun add_meta/2, #{}, Else)
+        []   -> [];
+        Else -> lists:foldl(fun add_meta/2, [], Else)
     end.
 
-add_meta(MetaItem, Map) ->
+add_meta(MetaItem, Acc) ->
     {Key, Value} = printable(MetaItem),
-    Map#{Key => Value}.
+    [{Key, Value} | Acc].
 
 %% can't naively encode `File` or `Pid` as json as jsx see them as lists
 %% of integers
@@ -79,40 +77,34 @@ pid_list(Pid) ->
             unicode:characters_to_binary(hd(io_lib:format("~p", [Pid])), unicode)
     end.
 
-%%filters
-redact(#{'message' := Message} = Msg, Regexes) ->
-    Msg#{'message' => redact_all(unicode:characters_to_binary(Message, unicode), Regexes)}.
+time_format(Time, Unit) ->
+    Microsec = erlang:convert_time_unit(Time, Unit, micro_seconds),
+    {Year, Month, Day, Hour, Min, Sec, USec} = convert(Microsec),
+    FormattedDate = format_date(Year, Month, Day),
+    FormattedTime = format_time(Hour, Min, Sec, USec),
+    {ok, format_(FormattedDate, FormattedTime)}.
 
-redact_all(Message, Regexes) ->
-    lists:foldl(fun redact_one/2, Message, Regexes).
+format_date(Y, M, D) when is_integer(Y), is_integer(M), is_integer(D) ->
+    io_lib:format("~4.10.0B-~2.10.0B-~2.10.0B", [Y, M, D]);
+format_date(_, _, _) -> {error, baddate}.
 
-redact_one(Regex, Message) ->
-    case re:run(Message, compile_regex(Regex), [global, {capture, first, index}]) of
-        {match, Captures} ->
-            lists:foldl(fun redact_capture/2, Message, Captures);
-        nomatch ->
-            Message
-    end.
+format_time(H, M, S, 0) when is_integer(H), is_integer(M), is_integer(S) ->
+    io_lib:format("~2.10.0B:~2.10.0B:~2.10.0B", [H, M, S]);
+format_time(H, M, S, U) when is_integer(H), is_integer(M), is_integer(S), is_integer(U) ->
+    SU = (S / 1) + (U / 1000000),
+    io_lib:format("~2.10.0B:~2.10.0B:~9.6.0f", [H, M, SU]);
+format_time(_, _, _, _) -> {error, badtime}.
 
-redact_capture({S, Len}, Message) ->
-    <<Pre:S/binary, _:Len/binary, Rest/binary>> = Message,
-    <<Pre/binary, (binary:copy(<<"*">>, Len))/binary, Rest/binary>>;
-redact_capture([Capture], Message) ->
-    redact_capture(Capture, Message).
+format_({error, baddate}, _) -> {error, badarg};
+format_(_, {error, badtime}) -> {error, badtime};
+format_(Date, Time) -> unicode:characters_to_binary([Date, "T", Time]).
 
-compile_regex(Regex) ->
-    case application:get_env(?MODULE, message_redaction_compiled_regexes, #{}) of
-        #{Regex := CompiledRegex} ->
-            CompiledRegex;
-        #{} = CompiledRegexes ->
-            {ok, CompiledRegex} = re:compile(Regex, [unicode]),
-            ok = application:set_env(
-                ?MODULE,
-                message_redaction_compiled_regexes,
-                CompiledRegexes#{Regex => CompiledRegex}
-            ),
-            CompiledRegex
-    end.
+convert(Time) ->
+    Epoch = calendar:datetime_to_gregorian_seconds({{1970, 1, 1}, {0, 0, 0}}),
+    GregorianSeconds = Time div 1000000 + Epoch,
+    {{Year, Month, Day}, {Hour, Min, Sec}} = calendar:gregorian_seconds_to_datetime(GregorianSeconds),
+    USec = Time rem 1000000,
+    {Year, Month, Day, Hour, Min, Sec, USec}.
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -121,7 +113,7 @@ compile_regex(Regex) ->
 timestamp_now() ->
     Now = os:timestamp(),
     {MegaSec, Sec, MicroSec} = Now,
-    {ok, TimeStamp} = rfc3339:format(
+    {ok, TimeStamp} = time_format(
         MegaSec * 1000000000000 + Sec * 1000000 + MicroSec,
         micro_seconds
     ),
@@ -154,22 +146,6 @@ format_test_() ->
             [<<"{\"@severity\":\"info\",\"@timestamp\":\"", TimeStamp/binary,
                "\",\"file\":\"foo.erl\",\"message\":\"hallo world\"}">>, <<"\n">>],
             format(lager_msg:new("hallo world", Now, info, [{file, "foo.erl"}], []), [])
-        )},
-        {"filtered message", ?_assertEqual(
-            [<<"{\"@severity\":\"info\",\"@timestamp\":\"",
-               TimeStamp/binary, "\",\"message\":\"one *** three four ******\"}">>, <<"\n">>],
-            format(
-                lager_msg:new("one two three four murder", Now, info, [], []),
-                [{message_redaction_regex_list, ["two", "[d-u]{6}"]}]
-            )
-        )},
-        {"filtered message", ?_assertEqual(
-            [<<"{\"@severity\":\"info\",\"@timestamp\":\"",
-               TimeStamp/binary, "\",\"message\":\"*** *** **** ***\"}">>, <<"\n">>],
-            format(
-                lager_msg:new("two two four two", Now, info, [], []),
-                [{message_redaction_regex_list, ["two", "four"]}]
-            )
         )}
     ].
 
