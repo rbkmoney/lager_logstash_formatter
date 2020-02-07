@@ -33,7 +33,7 @@ get_msg_meta(Msg) ->
 get_timestamp(Msg) ->
     {MegaSec, Sec, MicroSec} = lager_msg:timestamp(Msg),
     USec = MegaSec * 1000000000000 + Sec * 1000000 + MicroSec,
-    {ok, TimeStamp} = time_format(USec, micro_seconds),
+    {ok, TimeStamp} = time_format(USec),
     TimeStamp.
 
 -spec get_severity(lager_msg:lager_msg()) -> atom().
@@ -77,8 +77,7 @@ pid_list(Pid) ->
             unicode:characters_to_binary(hd(io_lib:format("~p", [Pid])), unicode)
     end.
 
-time_format(Time, Unit) ->
-    Microsec = erlang:convert_time_unit(Time, Unit, micro_seconds),
+time_format(Microsec) ->
     {Year, Month, Day, Hour, Min, Sec, USec} = convert(Microsec),
     FormattedDate = format_date(Year, Month, Day),
     FormattedTime = format_time(Hour, Min, Sec, USec),
@@ -113,10 +112,7 @@ convert(Time) ->
 timestamp_now() ->
     Now = os:timestamp(),
     {MegaSec, Sec, MicroSec} = Now,
-    {ok, TimeStamp} = time_format(
-        MegaSec * 1000000000000 + Sec * 1000000 + MicroSec,
-        micro_seconds
-    ),
+    {ok, TimeStamp} = time_format(MegaSec * 1000000000000 + Sec * 1000000 + MicroSec),
     {Now, TimeStamp}.
 
 pid() ->
