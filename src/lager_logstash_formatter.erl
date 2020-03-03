@@ -96,7 +96,7 @@ format_time(_, _, _, _) -> {error, badtime}.
 
 format_({error, baddate}, _) -> {error, badarg};
 format_(_, {error, badtime}) -> {error, badtime};
-format_(Date, Time) -> unicode:characters_to_binary([Date, "T", Time]).
+format_(Date, Time) -> unicode:characters_to_binary([Date, "T", Time, "Z"]).
 
 convert(Time) ->
     Epoch = calendar:datetime_to_gregorian_seconds({{1970, 1, 1}, {0, 0, 0}}),
